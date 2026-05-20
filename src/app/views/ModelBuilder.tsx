@@ -1,25 +1,25 @@
 import React, { useState, useMemo } from "react";
-import { Layers, Database, Check, ChevronRight, Calculator, Table, Activity } from "lucide-react";
-
-// Mock Data for the builder
-const AVAILABLE_METRICS = [
-  { id: "m1", name: "支付订单金额", type: "atomic", dims: ["dim_date", "dim_product", "dim_user", "dim_store"] },
-  { id: "m2", name: "退款金额", type: "atomic", dims: ["dim_date", "dim_product", "dim_store"] },
-  { id: "m3", name: "访问页面次数", type: "atomic", dims: ["dim_date", "dim_user", "dim_channel"] },
-  { id: "m4", name: "客单价", type: "composite", dims: ["dim_date", "dim_user"] },
-];
-
-const DIMENSION_DICT: Record<string, { name: string; desc: string }> = {
-  "dim_date": { name: "时间维度", desc: "分区与业务日期" },
-  "dim_product": { name: "商品维度", desc: "SKU及商品类目属性" },
-  "dim_user": { name: "用户维度", desc: "注册用户信息" },
-  "dim_store": { name: "门店维度", desc: "线下门店信息" },
-  "dim_channel": { name: "渠道维度", desc: "流量来源渠道" }
-};
+import { Layers, Database, Check, ChevronRight, Calculator, Table, Activity, Loader2 } from "lucide-react";
+import { useMetrics } from "../../hooks/useMetrics";
+import { useDimensions } from "../../hooks/useDimensions";
+import { generateDDL } from "../../lib/ddl-generator";
+import type { Metric, Dimension } from "../../types";
 
 export default function ModelBuilder() {
+  const { metrics: availableMetrics, loading: metricsLoading } = useMetrics();
+  const { dimensions: allDimensions, loading: dimsLoading } = useDimensions();
   const [selectedMetricIds, setSelectedMetricIds] = useState<string[]>([]);
   const [selectedDimIds, setSelectedDimIds] = useState<string[]>([]);
+  const [showDDL, setShowDDL] = useState(false);
+
+  // 构建维度字典
+  const dimensionDict = useMemo(() => {
+    const dict: Record<string, Dimension> = {};
+    allDimensions.forEach(d => {
+      dict[d.code] = d;
+    });
+    return dict;
+  }, [allDimensions]);
 
   // Select/Deselect Metrics
   const toggleMetric = (id: string) => {
@@ -39,19 +39,30 @@ export default function ModelBuilder() {
 
   // Core Logic: Calculate intersection of dimensions based on selected metrics
   const intersectedDims = useMemo(() => {
-    if (selectedMetricIds.length === 0) return [];
-    
+    if (selectedMetricIds.length === 0 || availableMetrics.length === 0) return [];
+
     // Get all dimension arrays of selected metrics
-    const selectedMetrics = AVAILABLE_METRICS.filter(m => selectedMetricIds.includes(m.id));
-    const dimArrays = selectedMetrics.map(m => m.dims);
-    
+    const selectedMetrics = availableMetrics.filter(m => selectedMetricIds.includes(m.id));
+    const dimArrays = selectedMetrics.map(m => m.dims || []);
+
     // Intersect
-    const intersection = dimArrays.reduce((acc, curr) => 
-      acc.filter(dim => curr.includes(dim))
+    const intersection = dimArrays.reduce((acc, curr) =>
+      acc.filter(dim => curr.includes(dim)),
+      dimArrays[0] || []
     );
-    
+
     return intersection;
-  }, [selectedMetricIds]);
+  }, [selectedMetricIds, availableMetrics]);
+
+  // Generate DDL
+  const ddlResult = useMemo(() => {
+    if (selectedMetricIds.length === 0 || selectedDimIds.length === 0) return null;
+    const selectedMetrics = availableMetrics.filter(m => selectedMetricIds.includes(m.id));
+    const selectedDims = selectedDimIds.map(id => dimensionDict[id]).filter(Boolean);
+    return generateDDL(selectedMetrics, selectedDims);
+  }, [selectedMetricIds, selectedDimIds, availableMetrics, dimensionDict]);
+
+  const loading = metricsLoading || dimsLoading;
 
   return (
     <div className="max-w-7xl mx-auto h-full flex flex-col gap-6">
@@ -72,7 +83,16 @@ export default function ModelBuilder() {
             <p className="text-xs text-slate-500 mt-1 pl-8">勾选需要放入同一个数据模型的指标</p>
           </div>
           <div className="flex-1 overflow-auto p-2">
-            {AVAILABLE_METRICS.map(metric => {
+            {metricsLoading ? (
+              <div className="flex items-center justify-center h-32">
+                <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+              </div>
+            ) : availableMetrics.length === 0 ? (
+              <div className="flex items-center justify-center h-32 text-sm text-slate-400">
+                暂无指标数据
+              </div>
+            ) : (
+              availableMetrics.map(metric => {
               const isSelected = selectedMetricIds.includes(metric.id);
               return (
                 <div 
@@ -88,16 +108,17 @@ export default function ModelBuilder() {
                   <div className="flex-1">
                     <div className="font-medium text-sm text-slate-800">{metric.name}</div>
                     <div className="flex gap-1 mt-1.5 flex-wrap">
-                      {metric.dims.map(dim => (
+                      {metric.dims?.map(dim => (
                         <span key={dim} className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded border border-slate-200">
-                          {DIMENSION_DICT[dim]?.name || dim}
+                          {dimensionDict[dim]?.name || dim}
                         </span>
                       ))}
                     </div>
                   </div>
                 </div>
               );
-            })}
+            })
+            )}
           </div>
         </div>
 
@@ -130,7 +151,7 @@ export default function ModelBuilder() {
                 </div>
                 {intersectedDims.map(dimId => {
                   const isSelected = selectedDimIds.includes(dimId);
-                  const dimInfo = DIMENSION_DICT[dimId];
+                  const dimInfo = dimensionDict[dimId];
                   return (
                     <div 
                       key={dimId}
@@ -197,7 +218,7 @@ export default function ModelBuilder() {
                         {selectedDimIds.map(dimId => (
                           <div key={dimId} className="px-3 py-1.5 flex justify-between items-center text-sm hover:bg-slate-700/50">
                             <span className="text-indigo-300 flex items-center gap-2"><Layers className="w-3.5 h-3.5" /> {dimId}</span>
-                            <span className="text-slate-500 text-xs">{DIMENSION_DICT[dimId]?.name}</span>
+                            <span className="text-slate-500 text-xs">{dimensionDict[dimId]?.name}</span>
                           </div>
                         ))}
                       </div>
@@ -210,7 +231,7 @@ export default function ModelBuilder() {
                           指标 (Select)
                         </div>
                         {selectedMetricIds.map(mId => {
-                          const metric = AVAILABLE_METRICS.find(m => m.id === mId);
+                          const metric = availableMetrics.find(m => m.id === mId);
                           return (
                             <div key={mId} className="px-3 py-1.5 flex justify-between items-center text-sm hover:bg-slate-700/50">
                               <span className="text-blue-300 flex items-center gap-2"><Activity className="w-3.5 h-3.5" /> metric_{mId}</span>
@@ -223,17 +244,31 @@ export default function ModelBuilder() {
                   </div>
                 </div>
 
-                <button 
-                  disabled={selectedMetricIds.length === 0}
+                <button
+                  onClick={() => setShowDDL(!showDDL)}
+                  disabled={selectedMetricIds.length === 0 || selectedDimIds.length === 0}
                   className={`w-full py-3 rounded-lg font-medium shadow flex items-center justify-center transition-all ${
-                    selectedMetricIds.length > 0 
-                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/50 cursor-pointer' 
+                    selectedMetricIds.length > 0 && selectedDimIds.length > 0
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/50 cursor-pointer'
                       : 'bg-slate-800 text-slate-500 cursor-not-allowed'
                   }`}
                 >
                   <Database className="w-4 h-4 mr-2" />
-                  执行物化配置 (DDL生成)
+                  {showDDL ? '隐藏 DDL' : '执行物化配置 (DDL生成)'}
                 </button>
+
+                {/* DDL Preview */}
+                {showDDL && ddlResult && (
+                  <div className="bg-slate-950 rounded-lg border border-slate-800 overflow-hidden">
+                    <div className="bg-slate-900 px-4 py-2 flex items-center justify-between border-b border-slate-800">
+                      <span className="text-xs font-mono text-emerald-400">{ddlResult.tableName}</span>
+                      <span className="text-xs text-slate-500">SQL DDL</span>
+                    </div>
+                    <pre className="p-4 text-xs font-mono text-slate-300 overflow-x-auto">
+                      {ddlResult.sql}
+                    </pre>
+                  </div>
+                )}
 
               </div>
             )}
