@@ -1,11 +1,14 @@
+# MetricBase DW
 
-  # 指标管理平台构建
+指标管理平台 - 基于 React + Supabase + Vercel
 
-  This is a code bundle for 指标管理平台构建. The original project is available at https://www.figma.com/design/MuLaL0spb7ccMFAeOO85wr/%E6%8C%87%E6%A0%87%E7%AE%A1%E7%90%86%E5%B9%B3%E5%8F%B0%E6%9E%84%E5%BB%BA.
+## 部署状态
 
-  ## Running the code
+[![Vercel Deployment](https://img.shields.io/badge/Vercel-Deployed-success)](https://metricbase-dw.vercel.app)
 
-  Run `npm i` to install the dependencies.
+## 技术栈
 
-  Run `npm run dev` to start the development server.
-  
+- 前端: React 18 + TypeScript + Vite
+- 后端: Supabase
+- 部署: Vercel
+
