@@ -5,6 +5,7 @@ import Dimensions from "./views/Dimensions";
 import FactTables from "./views/FactTables";
 import Metrics from "./views/Metrics";
 import ModelBuilder from "./views/ModelBuilder";
+import Categories from "./views/Categories";
 
 export const router = createBrowserRouter([
   {
@@ -16,6 +17,7 @@ export const router = createBrowserRouter([
       { path: "fact-tables", Component: FactTables },
       { path: "metrics", Component: Metrics },
       { path: "model-builder", Component: ModelBuilder },
+      { path: "categories", Component: Categories },
     ],
   },
 ]);

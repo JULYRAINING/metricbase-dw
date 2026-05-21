@@ -6,6 +6,7 @@ import dimensions from "./dimensions.ts";
 import factTables from "./fact-tables.ts";
 import metrics from "./metrics.ts";
 import categories from "./categories.ts";
+import properties from "./properties.ts";
 
 const app = new Hono();
 
@@ -40,5 +41,8 @@ app.route("/metrics", metrics);
 
 // 分类管理API
 app.route("/categories", categories);
+
+// 字段定义API
+app.route("/properties", properties);
 
 Deno.serve(app.fetch);
