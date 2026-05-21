@@ -7,6 +7,7 @@ import factTables from "./fact-tables.ts";
 import metrics from "./metrics.ts";
 import categories from "./categories.ts";
 import properties from "./properties.ts";
+import analysis from "./analysis.ts";
 
 const app = new Hono();
 
@@ -44,5 +45,8 @@ app.route("/categories", categories);
 
 // 字段定义API
 app.route("/properties", properties);
+
+// 多维分析API
+app.route("/analysis", analysis);
 
 Deno.serve(app.fetch);
