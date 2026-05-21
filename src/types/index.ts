@@ -1,6 +1,38 @@
 // 指标管理平台类型定义
 
 /**
+ * 分类定义
+ */
+export interface Category {
+  id: string;
+  name: string;
+  code: string;
+  parent_id?: string | null;
+  path: string;
+  level: number;
+  order: number;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * 字段定义
+ */
+export interface Property {
+  id: string;
+  name: string;
+  type: 'int' | 'string' | 'date' | 'datetime' | 'decimal' | 'boolean';
+  component_id: string;
+  dimension_id?: string;
+  description?: string;
+  is_join_key?: boolean;
+  join_key_target?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
  * 维度定义
  */
 export interface Dimension {
@@ -29,7 +61,16 @@ export interface FactTable {
 /**
  * 指标类型
  */
-export type MetricType = 'atomic' | 'derived' | 'composite';
+export type MetricType = 'atomic' | 'derived' | 'composite' | 'nested' | 'derived_from_composite';
+
+/**
+ * HAVING条件
+ */
+export interface HavingCondition {
+  field?: string;
+  operator: string;
+  value: number | string;
+}
 
 /**
  * 指标定义
@@ -43,8 +84,18 @@ export interface Metric {
   agg?: string; // 聚合方式(原子): SUM, COUNT, COUNT_DISTINCT, MAX, MIN
   condition?: string; // 业务限定条件(衍生)
   formula?: string; // 计算公式(复合)
-  base_metrics: string[]; // 依赖的基础指标编码数组(复合)
-  dims: string[]; // 继承的可分析维度编码数组
+  base_metrics?: string[]; // 依赖的基础指标编码数组(复合)
+  dims?: string[]; // 继承的可分析维度编码数组
+
+  // 嵌套指标字段
+  is_nested?: boolean;
+  nested_aggregator?: string;
+  aggregate_on?: string;
+  having_conditions?: HavingCondition[];
+
+  // 衍生复合指标字段
+  is_derived_from_composite?: boolean;
+
   created_at: string;
   updated_at: string;
 }

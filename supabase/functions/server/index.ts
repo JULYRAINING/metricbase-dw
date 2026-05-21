@@ -5,6 +5,7 @@ import * as kv from "./kv_store.ts";
 import dimensions from "./dimensions.ts";
 import factTables from "./fact-tables.ts";
 import metrics from "./metrics.ts";
+import categories from "./categories.ts";
 
 const app = new Hono();
 
@@ -36,5 +37,8 @@ app.route("/fact-tables", factTables);
 
 // 指标管理API
 app.route("/metrics", metrics);
+
+// 分类管理API
+app.route("/categories", categories);
 
 Deno.serve(app.fetch);
