@@ -195,3 +195,22 @@ export interface DimensionDictItem {
   name: string;
   desc: string;
 }
+
+/**
+ * 分析筛选条件
+ */
+export interface AnalysisFilters {
+  property_id: string;
+  operator: string;
+  value: unknown;
+}
+
+/**
+ * 分析查询结果
+ */
+export interface AnalysisResult {
+  columns: string[];
+  rows: unknown[][];
+  total: number;
+  sql: string;
+}
