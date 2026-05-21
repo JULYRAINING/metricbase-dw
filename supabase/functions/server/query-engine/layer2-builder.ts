@@ -17,6 +17,7 @@ import type {
   DimensionProperty,
   FilterCondition,
 } from "./types.ts";
+import { mapSqlOperator, formatValue } from "./sql-utils.ts";
 
 interface BuildLayer2Options {
   indicators: IndicatorNode[];
@@ -46,18 +47,18 @@ export function buildLayer2SQL(options: BuildLayer2Options): string {
 
   // 添加维度显示字段
   for (const dim of dimensions) {
-    // 为每个维度添加名称字段
-    selectFields.push(`dim_${dim.code}.name AS dim_${dim.id}_name`);
+    // 为每个维度添加名称字段（使用 dim.id 作为别名以保持一致性）
+    selectFields.push(`dim_${dim.id}.name AS dim_${dim.id}_name`);
   }
 
   // 构建 FROM 和 JOIN
   let fromSql = "FROM layer1";
 
-  // JOIN 维度表
+  // JOIN 维度表（使用 dim.id 作为别名）
   for (const dim of dimensions) {
-    // 查找维度表关联
+    const dimAlias = `dim_${dim.id}`;
     const dimTable = `dim_${dim.code}`;
-    fromSql += `\nLEFT JOIN ${dimTable} ON layer1.dim_${dim.id} = ${dimTable}.id`;
+    fromSql += `\nLEFT JOIN ${dimTable} AS ${dimAlias} ON layer1.dim_${dim.id} = ${dimAlias}.id`;
   }
 
   // WHERE 条件
@@ -120,47 +121,4 @@ function buildSingleFilter(filter: FilterCondition): string | null {
   }
 
   return null;
-}
-
-/**
- * 映射 SQL 操作符
- */
-function mapSqlOperator(operator: string): string {
-  const mapping: Record<string, string> = {
-    eq: "=",
-    ne: "!=",
-    gt: ">",
-    gte: ">=",
-    lt: "<",
-    lte: "<=",
-    in: "IN",
-    nin: "NOT IN",
-    like: "LIKE",
-    ilike: "ILIKE",
-    is_null: "IS NULL",
-    is_not_null: "IS NOT NULL",
-  };
-  return mapping[operator] || operator;
-}
-
-/**
- * 格式化值
- */
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "NULL";
-  }
-  if (typeof value === "string") {
-    return `'${value.replace(/'/g, "''")}'`;
-  }
-  if (typeof value === "number") {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return `(${value.map((v) => formatValue(v)).join(", ")})`;
-  }
-  if (typeof value === "boolean") {
-    return value ? "TRUE" : "FALSE";
-  }
-  return String(value);
 }

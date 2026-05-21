@@ -12,6 +12,12 @@
 
 import type { IndicatorNode } from "../utils/indicator-tree.ts";
 import type { Dimension, DimensionProperty, Layer0Subquery } from "./types.ts";
+import { mapSqlOperator, formatValue } from "./sql-utils.ts";
+import {
+  collectAtomicAndNested,
+  collectDerivedFromComposite,
+  collectAtomicSources,
+} from "./indicator-utils.ts";
 
 const NULL_KEY_PLACEHOLDER = "__NULL_KEY__";
 
@@ -107,58 +113,6 @@ export function buildLayer0SQL(options: BuildLayer0Options): string {
   }
 
   return subqueries.join("\nUNION ALL\n");
-}
-
-/**
- * 收集所有原子/嵌套指标
- */
-function collectAtomicAndNested(indicators: IndicatorNode[]): IndicatorNode[] {
-  const result: IndicatorNode[] = [];
-  const seenCodes = new Set<string>();
-
-  function collectSources(node: IndicatorNode) {
-    for (const source of node.sources) {
-      if (source.type === "atomic") {
-        if (!seenCodes.has(source.code)) {
-          seenCodes.add(source.code);
-          result.push(source);
-        }
-      } else if (
-        source.type === "composite" ||
-        source.type === "derived_from_composite"
-      ) {
-        collectSources(source);
-      }
-    }
-  }
-
-  for (const node of indicators) {
-    // 只处理用户选择的指标
-    if (!node._is_user_selected) {
-      continue;
-    }
-
-    if (node.type === "atomic" || node.type === "nested" || node.type === "derived") {
-      if (!seenCodes.has(node.code)) {
-        seenCodes.add(node.code);
-        result.push(node);
-      }
-    } else if (node.type === "composite") {
-      // 复合指标: 收集来源原子指标
-      collectSources(node);
-    }
-  }
-
-  return result;
-}
-
-/**
- * 收集所有 derived_from_composite 指标
- */
-function collectDerivedFromComposite(indicators: IndicatorNode[]): IndicatorNode[] {
-  return indicators.filter(
-    (ind) => ind.type === "derived_from_composite" && ind._is_user_selected
-  );
 }
 
 /**
@@ -345,28 +299,6 @@ FROM (
 }
 
 /**
- * 递归收集来源原子指标
- */
-function collectAtomicSources(
-  node: IndicatorNode,
-  result: IndicatorNode[],
-  seenCodes: Set<string>,
-) {
-  for (const source of node.sources) {
-    if (source.type === "atomic") {
-      if (!seenCodes.has(source.code)) {
-        seenCodes.add(source.code);
-        result.push(source);
-      }
-    } else if (
-      source.type === "composite" || source.type === "derived_from_composite"
-    ) {
-      collectAtomicSources(source, result, seenCodes);
-    }
-  }
-}
-
-/**
  * 查找维度字段
  */
 function findDimensionField(
@@ -389,43 +321,4 @@ function buildWhereConditions(condition?: string): string {
     return "";
   }
   return `WHERE ${condition}`;
-}
-
-/**
- * 映射 SQL 操作符
- */
-function mapSqlOperator(operator: string): string {
-  const mapping: Record<string, string> = {
-    "eq": "=",
-    "ne": "!=",
-    "gt": ">",
-    "gte": ">=",
-    "lt": "<",
-    "lte": "<=",
-    "in": "IN",
-    "nin": "NOT IN",
-    "like": "LIKE",
-    "is_null": "IS NULL",
-    "is_not_null": "IS NOT NULL",
-  };
-  return mapping[operator] || operator;
-}
-
-/**
- * 格式化值
- */
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "NULL";
-  }
-  if (typeof value === "string") {
-    return `'${value.replace(/'/g, "''")}'`;
-  }
-  if (typeof value === "number") {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return `(${value.map((v) => formatValue(v)).join(", ")})`;
-  }
-  return String(value);
 }

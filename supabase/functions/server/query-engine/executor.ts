@@ -17,6 +17,8 @@ interface ExecuteOptions {
  *
  * 注意: 需要 Supabase SQL API 权限
  * 或者连接到外部数据仓库
+ *
+ * 错误时抛出异常而非返回空结果，便于调用方区分"无数据"和"执行失败"
  */
 export async function executeQuery(
   options: ExecuteOptions
@@ -33,46 +35,31 @@ export async function executeQuery(
 
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-  try {
-    // 使用 Supabase 的 rpc 执行 SQL
-    // 注意: 需要预先创建执行 SQL 的函数
-    const { data, error } = await supabase.rpc("execute_sql", {
-      query: sql,
-    });
+  // 使用 Supabase 的 rpc 执行 SQL
+  // 注意: 需要预先创建执行 SQL 的函数
+  const { data, error } = await supabase.rpc("execute_sql", {
+    query: sql,
+  });
 
-    if (error) {
-      return {
-        columns: [],
-        rows: [],
-        total: 0,
-        sql,
-      };
-    }
-
-    // 解析结果
-    const rows = Array.isArray(data) ? data : [];
-    const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
-
-    // 转换为数组格式
-    const rowsArray = rows.map((row: Record<string, unknown>) =>
-      columns.map((col) => row[col])
-    );
-
-    return {
-      columns,
-      rows: rowsArray,
-      total: rows.length,
-      sql,
-    };
-  } catch (err) {
-    console.error("SQL execution error:", err);
-    return {
-      columns: [],
-      rows: [],
-      total: 0,
-      sql,
-    };
+  if (error) {
+    throw new Error(`SQL execution failed: ${error.message || String(error)}`);
   }
+
+  // 解析结果
+  const rows = Array.isArray(data) ? data : [];
+  const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+  // 转换为数组格式
+  const rowsArray = rows.map((row: Record<string, unknown>) =>
+    columns.map((col) => row[col])
+  );
+
+  return {
+    columns,
+    rows: rowsArray,
+    total: rows.length,
+    sql,
+  };
 }
 
 /**

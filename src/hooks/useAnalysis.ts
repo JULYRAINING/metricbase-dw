@@ -5,7 +5,7 @@
 import { useState, useCallback } from "react";
 import type { AnalysisResult, AnalysisFilters } from "../types";
 
-const API_BASE = "/make-server-7b7e4046";
+const API_BASE = "/api";
 
 interface QueryParams {
   indicator_ids: string[];

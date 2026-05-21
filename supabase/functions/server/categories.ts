@@ -233,7 +233,7 @@ app.put("/:id", async (c) => {
       }
 
       // 检查是否移动到自己的子分类下
-      if (newParentId && existing.path.includes(`/${newParentId}/`)) {
+      if (newParentId && existing.path.split("/").includes(newParentId)) {
         return c.json({ error: "不能将分类移动到自己的子分类下方" }, 400);
       }
 

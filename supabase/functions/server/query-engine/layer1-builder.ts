@@ -12,6 +12,7 @@
 
 import type { IndicatorNode } from "../utils/indicator-tree.ts";
 import type { Dimension, DimensionProperty } from "./types.ts";
+import { collectAtomicAndNested } from "./indicator-utils.ts";
 
 interface BuildLayer1Options {
   indicators: IndicatorNode[];
@@ -177,45 +178,4 @@ function addDivideByZeroProtection(formula: string): string {
     /(\w+|"[^"]+")\s*\/\s*(\w+|"[^"]+")/g,
     "$1 / NULLIF($2, 0)",
   );
-}
-
-/**
- * 收集所有原子/嵌套指标
- */
-function collectAtomicAndNested(indicators: IndicatorNode[]): IndicatorNode[] {
-  const result: IndicatorNode[] = [];
-  const seenCodes = new Set<string>();
-
-  function collectSources(node: IndicatorNode) {
-    for (const source of node.sources) {
-      if (source.type === "atomic") {
-        if (!seenCodes.has(source.code)) {
-          seenCodes.add(source.code);
-          result.push(source);
-        }
-      } else if (
-        source.type === "composite" ||
-        source.type === "derived_from_composite"
-      ) {
-        collectSources(source);
-      }
-    }
-  }
-
-  for (const node of indicators) {
-    if (!node._is_user_selected) {
-      continue;
-    }
-
-    if (node.type === "atomic" || node.type === "nested" || node.type === "derived") {
-      if (!seenCodes.has(node.code)) {
-        seenCodes.add(node.code);
-        result.push(node);
-      }
-    } else if (node.type === "composite") {
-      collectSources(node);
-    }
-  }
-
-  return result;
 }

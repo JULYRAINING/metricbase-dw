@@ -1,6 +1,8 @@
 /**
  * 多维分析 API
  * 提供完整的分析查询接口
+ *
+ * 响应格式与其他端点统一: { data?, error? }
  */
 
 import { Hono } from "https://deno.land/x/hono@v3.12.0/mod.ts";
@@ -26,6 +28,12 @@ const querySchema = z.object({
   page_size: z.number().int().min(1).max(1000).optional().default(100),
 });
 
+// 操作符白名单校验
+const ALLOWED_OPERATORS = new Set(["eq", "ne", "gt", "gte", "lt", "lte", "in", "nin", "like", "ilike", "is_null", "is_not_null"]);
+
+// 排序字段白名单校验
+const ORDER_BY_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*(\s+(ASC|DESC))?$/i;
+
 // 公共维度查询参数
 const commonDimensionsSchema = z.object({
   indicator_ids: z.array(z.string()).min(1, "至少选择一个指标"),
@@ -42,13 +50,27 @@ app.post("/query", async (c) => {
 
     if (!result.success) {
       return c.json({
-        success: false,
         error: "参数校验失败",
-        details: result.error.format(),
       }, 400);
     }
 
     const config = result.data;
+
+    // 验证操作符白名单
+    for (const filter of config.filters) {
+      if (!ALLOWED_OPERATORS.has(filter.operator)) {
+        return c.json({
+          error: `不支持的操作符: ${filter.operator}`,
+        }, 400);
+      }
+    }
+
+    // 验证排序字段
+    if (config.order_by && !ORDER_BY_REGEX.test(config.order_by)) {
+      return c.json({
+        error: "无效的排序字段",
+      }, 400);
+    }
 
     // 生成 SQL
     const engine = new QueryEngine();
@@ -63,7 +85,6 @@ app.post("/query", async (c) => {
 
     if (!sql) {
       return c.json({
-        success: false,
         error: "无法生成查询 SQL",
       }, 400);
     }
@@ -72,7 +93,6 @@ app.post("/query", async (c) => {
     const validation = validateSQL(sql);
     if (!validation.valid) {
       return c.json({
-        success: false,
         error: `SQL 验证失败: ${validation.error}`,
       }, 400);
     }
@@ -85,13 +105,11 @@ app.post("/query", async (c) => {
     });
 
     return c.json({
-      success: true,
       data: queryResult,
     });
   } catch (error) {
     console.error("Query error:", error);
     return c.json({
-      success: false,
       error: error instanceof Error ? error.message : "查询执行失败",
     }, 500);
   }
@@ -108,13 +126,27 @@ app.post("/preview-sql", async (c) => {
 
     if (!result.success) {
       return c.json({
-        success: false,
         error: "参数校验失败",
-        details: result.error.format(),
       }, 400);
     }
 
     const config = result.data;
+
+    // 验证操作符白名单
+    for (const filter of config.filters) {
+      if (!ALLOWED_OPERATORS.has(filter.operator)) {
+        return c.json({
+          error: `不支持的操作符: ${filter.operator}`,
+        }, 400);
+      }
+    }
+
+    // 验证排序字段
+    if (config.order_by && !ORDER_BY_REGEX.test(config.order_by)) {
+      return c.json({
+        error: "无效的排序字段",
+      }, 400);
+    }
 
     // 生成 SQL
     const engine = new QueryEngine();
@@ -129,13 +161,11 @@ app.post("/preview-sql", async (c) => {
 
     if (!sql) {
       return c.json({
-        success: false,
         error: "无法生成查询 SQL",
       }, 400);
     }
 
     return c.json({
-      success: true,
       data: {
         sql,
       },
@@ -143,7 +173,6 @@ app.post("/preview-sql", async (c) => {
   } catch (error) {
     console.error("Preview SQL error:", error);
     return c.json({
-      success: false,
       error: error instanceof Error ? error.message : "SQL 生成失败",
     }, 500);
   }
@@ -160,9 +189,7 @@ app.post("/common-dimensions", async (c) => {
 
     if (!result.success) {
       return c.json({
-        success: false,
         error: "参数校验失败",
-        details: result.error.format(),
       }, 400);
     }
 
@@ -172,13 +199,11 @@ app.post("/common-dimensions", async (c) => {
     const dimensions = await getIndicatorCommonDimensions(indicator_ids);
 
     return c.json({
-      success: true,
       data: dimensions,
     });
   } catch (error) {
     console.error("Common dimensions error:", error);
     return c.json({
-      success: false,
       error: error instanceof Error ? error.message : "获取公共维度失败",
     }, 500);
   }

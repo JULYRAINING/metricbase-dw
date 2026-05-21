@@ -64,11 +64,16 @@ export interface FactTable {
 export type MetricType = 'atomic' | 'derived' | 'composite' | 'nested' | 'derived_from_composite';
 
 /**
+ * 比较操作符
+ */
+export type ComparisonOperator = 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'nin' | 'like' | 'ilike' | 'is_null' | 'is_not_null';
+
+/**
  * HAVING条件
  */
 export interface HavingCondition {
   field?: string;
-  operator: string;
+  operator: ComparisonOperator;
   value: number | string;
 }
 
@@ -201,8 +206,8 @@ export interface DimensionDictItem {
  */
 export interface AnalysisFilters {
   property_id: string;
-  operator: string;
-  value: unknown;
+  operator: ComparisonOperator;
+  value: string | number | boolean | null;
 }
 
 /**
