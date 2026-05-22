@@ -7,7 +7,19 @@ interface CategoryNode extends Category {
   children: CategoryNode[];
 }
 
-export function useCategories() {
+export interface UseCategoriesReturn {
+  categories: Category[];
+  categoryTree: CategoryNode[];
+  loading: boolean;
+  error: string | null;
+  fetchCategories: (search?: string, parentId?: string | null) => Promise<Category[]>;
+  fetchCategoryTree: () => Promise<CategoryNode[]>;
+  createCategory: (data: Omit<Category, "id" | "created_at" | "updated_at" | "path" | "level">) => Promise<Category | null>;
+  updateCategory: (id: string, data: Partial<Category>) => Promise<Category | null>;
+  deleteCategory: (id: string) => Promise<boolean>;
+}
+
+export function useCategories(): UseCategoriesReturn {
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryTree, setCategoryTree] = useState<CategoryNode[]>([]);
   const [loading, setLoading] = useState(false);

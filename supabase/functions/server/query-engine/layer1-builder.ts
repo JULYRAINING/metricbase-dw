@@ -13,6 +13,7 @@
 import type { IndicatorNode } from "../utils/indicator-tree.ts";
 import type { Dimension, DimensionProperty } from "./types.ts";
 import { collectAtomicAndNested } from "./indicator-utils.ts";
+import { validateFormula, validateMetricCode } from "./sql-utils.ts";
 
 interface BuildLayer1Options {
   indicators: IndicatorNode[];
@@ -124,16 +125,28 @@ function buildCompositeFormula(node: IndicatorNode): string {
     return `NULL AS "${node.code}"`;
   }
 
-  // 解析公式中的变量并替换
-  let formula = node.formula;
+  // 验证公式格式（防止 SQL 注入）
+  let formula = validateFormula(node.formula);
 
-  // 收集所有来源指标编码
-  const sourceCodes = node.sources.map((s) => s.code);
+  // 验证并收集所有来源指标编码
+  const sourceCodes = node.sources.map((s) => {
+    // 验证来源指标编码格式
+    return validateMetricCode(s.code);
+  });
 
+  // 替换公式中的变量引用
   for (const code of sourceCodes) {
     // 替换公式中的变量引用
     // 支持 {code} 或直接引用
     formula = formula.replace(new RegExp(`\\{${code}\\}`, "g"), `"${code}"`);
+  }
+
+  // 验证所有变量是否已被替换（检查是否有剩余的 {xxx} 模式）
+  const remainingVars = formula.match(/\{[^}]+\}/g);
+  if (remainingVars) {
+    throw new Error(
+      `Formula contains undefined variables: ${remainingVars.join(", ")}`
+    );
   }
 
   // 添加除零保护

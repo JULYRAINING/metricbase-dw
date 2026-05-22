@@ -104,6 +104,10 @@ className={cn(buttonVariants({ variant }), className)}
 - UI components use `data-slot` attribute for styling hooks
 - CSS imports: `@import './file.css'` in `index.css`
 
+## Knowledge Base
+
+项目维护一个可搜索的解决方案知识库，位于 `docs/solutions/`。文档按类别组织（如 `logic-errors/`），包含 YAML frontmatter 用于搜索过滤（`module`, `tags`, `problem_type` 等字段）。在实现功能或调试已记录领域的问题前，应先搜索此知识库。
+
 ## Important Notes
 
 - This is a Figma Make-generated project with shadcn/ui components

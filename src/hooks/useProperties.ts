@@ -3,7 +3,17 @@ import type { Property } from "../types";
 
 const API_BASE = "/api";
 
-export function useProperties() {
+export interface UsePropertiesReturn {
+  properties: Property[];
+  loading: boolean;
+  error: string | null;
+  fetchProperties: (componentId?: string) => Promise<Property[]>;
+  createProperty: (data: Omit<Property, "id" | "created_at" | "updated_at">) => Promise<Property | null>;
+  updateProperty: (id: string, data: Partial<Property>) => Promise<Property | null>;
+  deleteProperty: (id: string) => Promise<boolean>;
+}
+
+export function useProperties(): UsePropertiesReturn {
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

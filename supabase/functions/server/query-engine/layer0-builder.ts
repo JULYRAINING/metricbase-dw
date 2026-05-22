@@ -12,7 +12,7 @@
 
 import type { IndicatorNode } from "../utils/indicator-tree.ts";
 import type { Dimension, DimensionProperty, Layer0Subquery } from "./types.ts";
-import { mapSqlOperator, formatValue } from "./sql-utils.ts";
+import { mapSqlOperator, formatValue, validateCondition, validateIdentifier } from "./sql-utils.ts";
 import {
   collectAtomicAndNested,
   collectDerivedFromComposite,
@@ -147,7 +147,9 @@ function buildAtomicSubquery(
   }
 
   // WHERE 条件
-  const whereSql = buildWhereConditions(node.condition);
+  // 验证 condition 防止 SQL 注入
+  const validatedCondition = validateCondition(node.condition || "");
+  const whereSql = buildWhereConditions(validatedCondition);
 
   // GROUP BY 字段
   const groupFields: string[] = [];
@@ -165,13 +167,15 @@ function buildAtomicSubquery(
     groupSql = groupSuffix.replace(", ", "");
   }
 
-  // 聚合函数
+  // 验证表名和字段名防止 SQL 注入
+  const validatedSource = validateIdentifier(node.source || "", "Source table");
   const aggFunc = node.agg || "SUM";
-  const measureField = node.measure || "*";
+  // measure 为 * 时不需要验证，否则验证字段名
+  const measureField = node.measure === "*" ? "*" : validateIdentifier(node.measure || "*", "Measure field");
 
   return `SELECT ${dimSql}'${node.code}' AS metric_code,
-    ${aggFunc}(${node.source}.${measureField}) AS metric_value
-FROM ${node.source}
+    ${aggFunc}(${validatedSource}.${measureField}) AS metric_value
+FROM ${validatedSource}
 ${whereSql}
 ${groupSql ? `GROUP BY ${groupSql}` : ""}`;
 }
@@ -195,6 +199,12 @@ function buildNestedSubquery(
 
   const firstSource = sourceAtomics[0];
 
+  // 验证来源表名防止 SQL 注入
+  const validatedSource = validateIdentifier(
+    firstSource.source || "",
+    "Nested source table"
+  );
+
   // 内层 SELECT 字段
   const innerDimFields: string[] = [];
   const outerDimFields: string[] = [];
@@ -208,9 +218,11 @@ function buildNestedSubquery(
       dimensionProps,
     );
     if (fieldName) {
-      innerDimFields.push(`${firstSource.source}.${fieldName} AS dim_${dim.id}`);
+      // 验证字段名
+      const validatedField = validateIdentifier(fieldName, "Dimension field");
+      innerDimFields.push(`${validatedSource}.${validatedField} AS dim_${dim.id}`);
       outerDimFields.push(`inner_data.dim_${dim.id} AS dim_${dim.id}`);
-      innerGroupFields.push(`${firstSource.source}.${fieldName}`);
+      innerGroupFields.push(`${validatedSource}.${validatedField}`);
       outerGroupFields.push(`dim_${dim.id}`);
     }
   }
@@ -227,7 +239,9 @@ function buildNestedSubquery(
   // nested_key 字段（聚合键）
   let nestedKeyField: string;
   if (node.aggregate_on) {
-    nestedKeyField = `COALESCE(${firstSource.source}.${node.aggregate_on}, '${NULL_KEY_PLACEHOLDER}') AS nested_key`;
+    // 验证 aggregate_on 字段名防止 SQL 注入
+    const validatedAggregateOn = validateIdentifier(node.aggregate_on, "Aggregate on field");
+    nestedKeyField = `COALESCE(${validatedSource}.${validatedAggregateOn}, '${NULL_KEY_PLACEHOLDER}') AS nested_key`;
   } else {
     nestedKeyField = "1 AS nested_key";
   }
@@ -268,8 +282,9 @@ function buildNestedSubquery(
     ? `GROUP BY ${outerGroupFields.join(", ")}`
     : "";
 
-  // 构建 WHERE 条件
-  const whereSql = buildWhereConditions(node.condition);
+  // 构建 WHERE 条件（验证防止 SQL 注入）
+  const validatedNestedCondition = validateCondition(node.condition || "");
+  const whereSql = buildWhereConditions(validatedNestedCondition);
 
   if (outerDimSql) {
     return `SELECT ${outerDimSql},
@@ -278,7 +293,7 @@ function buildNestedSubquery(
 FROM (
     SELECT ${innerDimSql},
         COUNT(*) AS inner_metric
-    FROM ${firstSource.source}
+    FROM ${validatedSource}
     ${whereSql}
     ${innerGroupSql}
     ${havingSql}
@@ -290,7 +305,7 @@ ${outerGroupSql}`;
 FROM (
     SELECT ${innerDimSql},
         COUNT(*) AS inner_metric
-    FROM ${firstSource.source}
+    FROM ${validatedSource}
     ${whereSql}
     ${innerGroupSql}
     ${havingSql}
