@@ -6,6 +6,7 @@ import FactTables from "./views/FactTables";
 import Metrics from "./views/Metrics";
 import ModelBuilder from "./views/ModelBuilder";
 import Categories from "./views/Categories";
+import PhysicalTables from "./views/PhysicalTables";
 
 export const router = createBrowserRouter([
   {
@@ -15,6 +16,7 @@ export const router = createBrowserRouter([
       { index: true, Component: Dashboard },
       { path: "dimensions", Component: Dimensions },
       { path: "fact-tables", Component: FactTables },
+      { path: "physical-tables", Component: PhysicalTables },
       { path: "metrics", Component: Metrics },
       { path: "model-builder", Component: ModelBuilder },
       { path: "categories", Component: Categories },

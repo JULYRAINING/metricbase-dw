@@ -3,7 +3,13 @@
  * 用于构建指标依赖关系和检测循环依赖
  */
 
-import * as kv from "../kv_store.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
+
+// 获取Supabase客户端
+const getSupabase = () => createClient(
+  Deno.env.get("SUPABASE_URL") || "",
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
+);
 
 // 指标节点类型
 export interface IndicatorNode {
@@ -29,18 +35,13 @@ export interface IndicatorNode {
   _is_user_selected?: boolean;
 }
 
-// KV键名生成器
-const KEYS = {
-  metric: (id: string) => `metric:${id}`,
-  metricCodeIndex: (code: string) => `metric:code:${code}`,
-};
-
 /**
  * 构建指标依赖树
  * @param ids 指标ID列表
  * @returns 指标节点列表
  */
 export async function buildIndicatorTree(ids: string[]): Promise<IndicatorNode[]> {
+  const supabase = getSupabase();
   const selectedIds = new Set(ids);
   const nodeMap = new Map<string, IndicatorNode>();
   const visited = new Set<string>();
@@ -52,20 +53,27 @@ export async function buildIndicatorTree(ids: string[]): Promise<IndicatorNode[]
     }
 
     if (visited.has(id)) {
-      // 检测到循环依赖，返回null
-      return null;
+      // 检测到循环依赖，抛出错误
+      throw new Error(
+        `Circular dependency detected: metric ID "${id}" has already been visited in the dependency chain.`
+      );
     }
 
     visited.add(id);
 
-    const metric = await kv.get(KEYS.metric(id));
-    if (!metric) {
+    const { data: metric, error } = await supabase
+      .from("metrics")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (error || !metric) {
       return null;
     }
 
     const node: IndicatorNode = {
       id: metric.id,
-      code: metric.code,
+      code: metric.code || metric.name,
       name: metric.name,
       type: metric.type,
       source: metric.source,
@@ -85,11 +93,16 @@ export async function buildIndicatorTree(ids: string[]): Promise<IndicatorNode[]
 
     // 递归加载依赖
     if (metric.type === 'composite' && metric.base_metrics?.length > 0) {
-      // 复合指标：加载所有基础指标
+      // 复合指标：加载所有基础指标（通过 code 查找）
       for (const baseCode of metric.base_metrics) {
-        const baseId = await kv.get(KEYS.metricCodeIndex(baseCode));
-        if (baseId) {
-          const baseNode = await loadIndicator(baseId);
+        const { data: baseMetric } = await supabase
+          .from("metrics")
+          .select("id")
+          .eq("code", baseCode)
+          .single();
+
+        if (baseMetric) {
+          const baseNode = await loadIndicator(baseMetric.id);
           if (baseNode) {
             node.sources.push(baseNode);
           }
@@ -97,18 +110,28 @@ export async function buildIndicatorTree(ids: string[]): Promise<IndicatorNode[]
       }
     } else if ((metric.type === 'derived' || metric.type === 'nested' ||
                 metric.type === 'derived_from_composite') && metric.source) {
-      // 衍生/嵌套指标：加载源指标
-      const sourceId = await kv.get(KEYS.metricCodeIndex(metric.source));
-      if (sourceId) {
-        const sourceNode = await loadIndicator(sourceId);
+      // 衍生/嵌套指标：加载源指标（通过 code 查找）
+      const { data: sourceMetric } = await supabase
+        .from("metrics")
+        .select("id")
+        .eq("code", metric.source)
+        .single();
+
+      if (sourceMetric) {
+        const sourceNode = await loadIndicator(sourceMetric.id);
         if (sourceNode) {
           node.sources.push(sourceNode);
           // 对于衍生复合指标，还需要加载源复合指标的基础指标
           if (metric.is_derived_from_composite && sourceNode.base_metrics) {
             for (const baseCode of sourceNode.base_metrics) {
-              const baseId = await kv.get(KEYS.metricCodeIndex(baseCode));
-              if (baseId && baseId !== sourceId) {
-                const baseNode = await loadIndicator(baseId);
+              const { data: baseMetric } = await supabase
+                .from("metrics")
+                .select("id")
+                .eq("code", baseCode)
+                .single();
+
+              if (baseMetric && baseMetric.id !== sourceMetric.id) {
+                const baseNode = await loadIndicator(baseMetric.id);
                 if (baseNode) {
                   node.sources.push(baseNode);
                 }
@@ -170,6 +193,7 @@ export function detectCircularDependency(
  * @returns 所有依赖的指标ID列表
  */
 export async function getAllDependencies(id: string): Promise<string[]> {
+  const supabase = getSupabase();
   const dependencies = new Set<string>();
   const visited = new Set<string>();
 
@@ -179,24 +203,39 @@ export async function getAllDependencies(id: string): Promise<string[]> {
     }
     visited.add(currentId);
 
-    const metric = await kv.get(KEYS.metric(currentId));
+    const { data: metric } = await supabase
+      .from("metrics")
+      .select("*")
+      .eq("id", currentId)
+      .single();
+
     if (!metric) {
       return;
     }
 
     if (metric.type === 'composite' && metric.base_metrics?.length > 0) {
       for (const baseCode of metric.base_metrics) {
-        const baseId = await kv.get(KEYS.metricCodeIndex(baseCode));
-        if (baseId) {
-          dependencies.add(baseId);
-          await collectDependencies(baseId);
+        const { data: baseMetric } = await supabase
+          .from("metrics")
+          .select("id")
+          .eq("code", baseCode)
+          .single();
+
+        if (baseMetric) {
+          dependencies.add(baseMetric.id);
+          await collectDependencies(baseMetric.id);
         }
       }
     } else if ((metric.type === 'derived' || metric.type === 'nested') && metric.source) {
-      const sourceId = await kv.get(KEYS.metricCodeIndex(metric.source));
-      if (sourceId) {
-        dependencies.add(sourceId);
-        await collectDependencies(sourceId);
+      const { data: sourceMetric } = await supabase
+        .from("metrics")
+        .select("id")
+        .eq("code", metric.source)
+        .single();
+
+      if (sourceMetric) {
+        dependencies.add(sourceMetric.id);
+        await collectDependencies(sourceMetric.id);
       }
     }
   }
@@ -207,7 +246,7 @@ export async function getAllDependencies(id: string): Promise<string[]> {
 
 /**
  * 计算公共维度
- * 获取多个指标共同支持的维度列表
+ * 获取多个指标共同支持的维度列表（从 physical_tables 表）
  */
 export async function calculateCommonDimensions(metricIds: string[]): Promise<Array<{
   id: string;
@@ -218,41 +257,46 @@ export async function calculateCommonDimensions(metricIds: string[]): Promise<Ar
     return [];
   }
 
+  const supabase = getSupabase();
+
   // 加载所有指标
-  const metrics = await Promise.all(
-    metricIds.map(id => kv.get(KEYS.metric(id)))
-  );
+  const { data: metrics } = await supabase
+    .from("metrics")
+    .select("id, dims")
+    .in("id", metricIds);
+
+  if (!metrics || metrics.length === 0) {
+    return [];
+  }
 
   // 收集每个指标支持的维度
   const dimensionSets: Set<string>[] = [];
 
   for (const metric of metrics) {
-    if (!metric) continue;
-
     const dims = new Set<string>();
 
     if (metric.dims) {
       metric.dims.forEach((d: string) => dims.add(d));
     }
 
-    // 如果是复合指标，获取所有来源指标的维度交集
+    // 复合指标：获取所有来源指标的维度交集
     if (metric.type === 'composite' && metric.base_metrics?.length > 0) {
-      const baseDims: Set<string>[] = [];
-      for (const baseCode of metric.base_metrics) {
-        const baseId = await kv.get(KEYS.metricCodeIndex(baseCode));
-        if (baseId) {
-          const baseMetric = await kv.get(KEYS.metric(baseId));
-          if (baseMetric?.dims) {
-            baseDims.push(new Set(baseMetric.dims));
-          }
+      const { data: baseMetrics } = await supabase
+        .from("metrics")
+        .select("dims")
+        .in("code", metric.base_metrics);
+
+      if (baseMetrics) {
+        const baseDims: Set<string>[] = baseMetrics
+          .filter(m => m.dims)
+          .map(m => new Set(m.dims));
+
+        if (baseDims.length > 0) {
+          const intersection = new Set(
+            [...baseDims[0]].filter(d => baseDims.every(set => set.has(d)))
+          );
+          intersection.forEach(d => dims.add(d));
         }
-      }
-      // 取交集
-      if (baseDims.length > 0) {
-        const intersection = new Set(
-          [...baseDims[0]].filter(d => baseDims.every(set => set.has(d)))
-        );
-        intersection.forEach(d => dims.add(d));
       }
     }
 
@@ -268,36 +312,39 @@ export async function calculateCommonDimensions(metricIds: string[]): Promise<Ar
     dimensionSets.every(set => set.has(code))
   );
 
-  // 获取维度详情
-  const dimensions = await Promise.all(
-    commonDimCodes.map(async (code) => {
-      // 从维度列表中查找
-      const allDims = await kv.getByPrefix("dimension:") || [];
-      return allDims.find((d: any) => d.code === code);
-    })
-  );
+  // 从 physical_tables 获取维度详情
+  const { data: dimensions } = await supabase
+    .from("physical_tables")
+    .select("id, code, name")
+    .eq("table_type", "dimension")
+    .in("code", commonDimCodes);
 
-  return dimensions
-    .filter(Boolean)
-    .map((d: any) => ({
-      id: d.id,
-      name: d.name,
-      code: d.code,
-    }));
+  return (dimensions || []).map((d) => ({
+    id: String(d.id),
+    name: String(d.name),
+    code: String(d.code),
+  }));
 }
 
 /**
  * 根据指标ID获取指标详情
  */
 export async function getIndicatorById(id: string): Promise<IndicatorNode | null> {
-  const metric = await kv.get(KEYS.metric(id));
+  const supabase = getSupabase();
+
+  const { data: metric } = await supabase
+    .from("metrics")
+    .select("*")
+    .eq("id", id)
+    .single();
+
   if (!metric) {
     return null;
   }
 
   return {
     id: metric.id,
-    code: metric.code,
+    code: metric.code || metric.name,
     name: metric.name,
     type: metric.type,
     source: metric.source,
@@ -319,9 +366,16 @@ export async function getIndicatorById(id: string): Promise<IndicatorNode | null
  * 根据指标编码获取指标详情
  */
 export async function getIndicatorByCode(code: string): Promise<IndicatorNode | null> {
-  const id = await kv.get(KEYS.metricCodeIndex(code));
-  if (!id) {
+  const supabase = getSupabase();
+
+  const { data: metric } = await supabase
+    .from("metrics")
+    .select("*")
+    .eq("code", code)
+    .single();
+
+  if (!metric) {
     return null;
   }
-  return getIndicatorById(id);
+  return getIndicatorById(metric.id);
 }

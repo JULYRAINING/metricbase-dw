@@ -9,7 +9,8 @@ import {
   Bell,
   Search,
   FileSpreadsheet,
-  FolderTree
+  FolderTree,
+  Table2
 } from "lucide-react";
 
 export function Layout() {
@@ -17,6 +18,7 @@ export function Layout() {
     { name: "系统概览", path: "/", icon: LayoutDashboard },
     { name: "维度管理 (DWD)", path: "/dimensions", icon: Database },
     { name: "事实表管理 (DWD)", path: "/fact-tables", icon: FileSpreadsheet },
+    { name: "物理表管理", path: "/physical-tables", icon: Table2 },
     { name: "指标分类", path: "/categories", icon: FolderTree },
     { name: "指标管理", path: "/metrics", icon: Calculator },
     { name: "模型构建器", path: "/model-builder", icon: Workflow },

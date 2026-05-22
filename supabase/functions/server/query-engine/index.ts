@@ -10,10 +10,9 @@
 import {
   buildIndicatorTree,
   calculateCommonDimensions,
-  getIndicatorById,
   type IndicatorNode,
 } from "../utils/indicator-tree.ts";
-import * as kv from "../kv_store.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
 import { buildLayer0SQL } from "./layer0-builder.ts";
 import { buildLayer1SQL } from "./layer1-builder.ts";
 import { buildLayer2SQL } from "./layer2-builder.ts";
@@ -25,13 +24,11 @@ import type {
   FilterCondition,
 } from "./types.ts";
 
-// KV键名生成器
-const KEYS = {
-  dimension: (id: string) => `dimension:${id}`,
-  property: (id: string) => `property:${id}`,
-  componentProperties: (componentId: string) =>
-    `component:${componentId}:properties`,
-};
+// 获取Supabase客户端
+const getSupabase = () => createClient(
+  Deno.env.get("SUPABASE_URL") || "",
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
+);
 
 export class QueryEngine {
   private indicators: IndicatorNode[] = [];
@@ -102,16 +99,16 @@ SELECT * FROM layer2`;
   }
 
   /**
-   * 加载数据
+   * 加载数据（从 PostgreSQL）
    */
   private async loadData(config: QueryConfig): Promise<void> {
     // 1. 加载并构建指标依赖树
     this.indicators = await buildIndicatorTree(config.indicatorIds);
 
-    // 2. 加载维度
+    // 2. 加载维度（从 physical_tables）
     this.dimensions = await this.loadDimensions(config.dimensionIds);
 
-    // 3. 加载维度属性
+    // 3. 加载维度属性（从 fields）
     this.dimensionProps = await this.loadDimensionProperties();
 
     // 4. 解析筛选条件
@@ -124,39 +121,73 @@ SELECT * FROM layer2`;
   }
 
   /**
-   * 加载维度
+   * 加载维度（从 physical_tables 表）
    */
   private async loadDimensions(ids: string[]): Promise<Dimension[]> {
     if (ids.length === 0) {
       return [];
     }
 
-    const dimensions = await Promise.all(
-      ids.map((id) => kv.get(KEYS.dimension(id)))
-    );
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("physical_tables")
+      .select("id, code, name, description")
+      .eq("table_type", "dimension")
+      .in("id", ids);
 
-    return dimensions.filter(Boolean).map((d) => ({
-      id: d.id,
-      code: d.code,
-      name: d.name,
-      description: d.description,
+    if (error || !data) {
+      return [];
+    }
+
+    return data.map((d) => ({
+      id: String(d.id),
+      code: String(d.code),
+      name: String(d.name),
+      description: d.description ? String(d.description) : undefined,
     }));
   }
 
   /**
-   * 加载维度属性
+   * 加载维度属性（从 fields 表）
+   * 包含 dimension_key 类型的字段，并关联物理表的 code
    */
   private async loadDimensionProperties(): Promise<DimensionProperty[]> {
-    // 获取所有属性
-    const allProperties = await kv.getByPrefix("property:") || [];
+    const supabase = getSupabase();
 
-    return allProperties
-      .filter((p: any) => p.dimension_id)
-      .map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        component_name: p.component_id, // 使用 component_id 作为表名
-        dimension_id: p.dimension_id,
+    // 查询所有维度键字段，并关联物理表获取表 code
+    const { data: fields, error } = await supabase
+      .from("fields")
+      .select(`
+        id,
+        name,
+        table_id,
+        dimension_ref_id,
+        field_role
+      `)
+      .eq("field_role", "dimension_key");
+
+    if (error || !fields) {
+      return [];
+    }
+
+    // 获取所有涉及的物理表 ID
+    const tableIds = [...new Set(fields.map(f => f.table_id))];
+
+    // 查询物理表获取 code
+    const { data: tables } = await supabase
+      .from("physical_tables")
+      .select("id, code")
+      .in("id", tableIds);
+
+    const tableCodeMap = new Map((tables || []).map(t => [t.id, t.code]));
+
+    return fields
+      .filter((f) => f.dimension_ref_id)
+      .map((f) => ({
+        id: String(f.id),
+        name: String(f.name),
+        component_name: tableCodeMap.get(f.table_id) || '',  // 表 code
+        dimension_id: String(f.dimension_ref_id),  // 引用的维度物理表 ID
       }));
   }
 
@@ -166,15 +197,33 @@ SELECT * FROM layer2`;
   private async parseFilters(
     filters: Array<{ property_id: string; operator: string; value: unknown }>
   ): Promise<FilterCondition[]> {
+    const supabase = getSupabase();
     const result: FilterCondition[] = [];
 
     for (const filter of filters) {
-      const prop = await kv.get(KEYS.property(filter.property_id));
-      if (!prop) {
+      // 从 fields 表查询字段信息
+      const { data: field } = await supabase
+        .from("fields")
+        .select("name, table_id")
+        .eq("id", filter.property_id)
+        .single();
+
+      if (!field) {
         continue;
       }
 
-      const fieldName = `${prop.component_id}.${prop.name}`;
+      // 获取物理表 code
+      const { data: table } = await supabase
+        .from("physical_tables")
+        .select("code")
+        .eq("id", field.table_id)
+        .single();
+
+      if (!table) {
+        continue;
+      }
+
+      const fieldName = `${table.code}.${field.name}`;
       result.push({
         filter_type: "property",
         field_name: fieldName,

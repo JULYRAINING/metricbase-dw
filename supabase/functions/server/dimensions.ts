@@ -9,14 +9,23 @@ const getSupabase = () => createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
 );
 
+// 添加废弃警告 header 的中间件
+app.use("*", async (c, next) => {
+  await next();
+  c.res.headers.set("X-Deprecated", "true");
+  c.res.headers.set("X-Deprecated-Message", "This endpoint is deprecated. Use /physical-tables?table_type=dimension instead.");
+});
+
 // GET /dimensions - 获取维度列表（支持搜索）
+// 向后兼容：查询 physical_tables 表，table_type='dimension'
 app.get("/", async (c) => {
   const supabase = getSupabase();
   const search = c.req.query("search");
 
   let query = supabase
-    .from("dimensions")
-    .select("*")
+    .from("physical_tables")
+    .select("id, name, code, description, created_at, updated_at")
+    .eq("table_type", "dimension")
     .order("created_at", { ascending: false });
 
   if (search) {
@@ -33,6 +42,7 @@ app.get("/", async (c) => {
 });
 
 // POST /dimensions - 创建维度
+// 向后兼容：插入到 physical_tables 表
 app.post("/", async (c) => {
   const supabase = getSupabase();
   const body = await c.req.json();
@@ -43,10 +53,11 @@ app.post("/", async (c) => {
   }
 
   const { data, error } = await supabase
-    .from("dimensions")
+    .from("physical_tables")
     .insert({
       name: body.name,
       code: body.code,
+      table_type: "dimension",
       description: body.description || null,
     })
     .select()
@@ -74,9 +85,10 @@ app.put("/:id", async (c) => {
   if (body.description !== undefined) updateData.description = body.description;
 
   const { data, error } = await supabase
-    .from("dimensions")
+    .from("physical_tables")
     .update(updateData)
     .eq("id", id)
+    .eq("table_type", "dimension")
     .select()
     .single();
 
@@ -99,27 +111,28 @@ app.delete("/:id", async (c) => {
   const supabase = getSupabase();
   const id = c.req.param("id");
 
-  // 检查是否被事实表引用（可选的级联检查）
-  const { data: factTables, error: checkError } = await supabase
-    .from("fact_tables")
-    .select("id, name")
-    .contains("dims", [id]);
+  // 检查是否被字段引用（雪花模型）
+  const { data: fieldRefs, error: checkError } = await supabase
+    .from("fields")
+    .select("id, name, table_id")
+    .eq("dimension_ref_id", id);
 
   if (checkError) {
     return c.json({ error: checkError.message }, 500);
   }
 
-  if (factTables && factTables.length > 0) {
+  if (fieldRefs && fieldRefs.length > 0) {
     return c.json({
-      error: `该维度正在被 ${factTables.length} 个事实表引用，无法删除`,
-      references: factTables
+      error: `该维度正在被 ${fieldRefs.length} 个字段引用，无法删除`,
+      references: fieldRefs
     }, 409);
   }
 
   const { error } = await supabase
-    .from("dimensions")
+    .from("physical_tables")
     .delete()
-    .eq("id", id);
+    .eq("id", id)
+    .eq("table_type", "dimension");
 
   if (error) {
     return c.json({ error: error.message }, 500);

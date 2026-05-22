@@ -59,6 +59,94 @@ export interface FactTable {
 }
 
 /**
+ * 表类型枚举
+ */
+export type TableType = 'dimension' | 'fact';
+
+/**
+ * 字段角色枚举
+ */
+export type FieldRole = 'dimension_key' | 'measure' | 'attribute';
+
+/**
+ * 物理表定义（统一维度和事实表）
+ */
+export interface PhysicalTable {
+  id: string;
+  name: string;
+  code: string;
+  table_type: TableType;
+  description?: string;
+  fields?: Field[];
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * 字段定义（统一所有表的字段）
+ */
+export interface Field {
+  id: string;
+  name: string;
+  type: 'int' | 'string' | 'date' | 'datetime' | 'decimal' | 'boolean';
+  field_role: FieldRole;
+  table_id: string;
+  dimension_ref_id?: string;
+  description?: string;
+  is_join_key: boolean;
+  join_key_target?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * 创建物理表请求
+ */
+export interface CreatePhysicalTableRequest {
+  name: string;
+  code: string;
+  table_type: TableType;
+  description?: string;
+  fields?: CreateFieldRequest[];
+}
+
+/**
+ * 创建字段请求
+ */
+export interface CreateFieldRequest {
+  name: string;
+  type: Field['type'];
+  field_role: FieldRole;
+  table_id?: string;
+  dimension_ref_id?: string;
+  description?: string;
+  is_join_key?: boolean;
+}
+
+/**
+ * 更新物理表请求
+ */
+export interface UpdatePhysicalTableRequest {
+  name?: string;
+  code?: string;
+  table_type?: TableType;
+  description?: string;
+}
+
+/**
+ * 更新字段请求
+ */
+export interface UpdateFieldRequest {
+  name?: string;
+  type?: Field['type'];
+  field_role?: FieldRole;
+  dimension_ref_id?: string;
+  description?: string;
+  is_join_key?: boolean;
+  join_key_target?: string;
+}
+
+/**
  * 指标类型
  */
 export type MetricType = 'atomic' | 'derived' | 'composite' | 'nested' | 'derived_from_composite';

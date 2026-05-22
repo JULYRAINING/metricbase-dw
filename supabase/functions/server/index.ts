@@ -8,6 +8,8 @@ import metrics from "./metrics.ts";
 import categories from "./categories.ts";
 import properties from "./properties.ts";
 import analysis from "./analysis.ts";
+import physicalTables from "./physical-tables.ts";
+import fields from "./fields.ts";
 
 const app = new Hono();
 
@@ -48,5 +50,11 @@ app.route("/properties", properties);
 
 // 多维分析API
 app.route("/analysis", analysis);
+
+// 物理表管理API（统一维度和事实表）
+app.route("/physical-tables", physicalTables);
+
+// 字段管理API（支持维度引用）
+app.route("/fields", fields);
 
 Deno.serve(app.fetch);
