@@ -3,3 +3,5 @@
 .gstack/
 node_modules
 .context/
+dist/
+.env.local
