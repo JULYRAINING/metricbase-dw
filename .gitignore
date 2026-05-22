@@ -2,3 +2,4 @@
 .vercel
 .gstack/
 node_modules
+.context/
